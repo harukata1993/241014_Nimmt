@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#173f35">
+    <title>俺たちのNIMMT — Play smart. Avoid the sixth.</title>
+    <link rel="stylesheet" href="/style.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="/" aria-label="俺たちのNIMMT home">
+          <span class="brand-mark">6</span>
+          <span>俺たちのNIMMT</span>
+        </a>
+        <div class="topbar-right">
+          <span class="table-label"><span class="live-dot"></span> <span id="table-mode">LOCAL TABLE</span></span>
+          <button class="text-button" id="new-game-button" type="button" hidden>New game</button>
+          <button class="text-button" id="share-room-button" type="button" hidden>Share room</button>
+        </div>
+      </header>
+
+      <section class="setup-view" id="setup-view">
+        <div class="hero">
+          <p class="eyebrow">A GAME OF RISK &amp; TIMING</p>
+          <h1>PLAY SMART.<br><span>AVOID THE SIXTH.</span></h1>
+          <p class="hero-copy">Numbers decide who plays first.<br>Read the rows. Dodge the bulls.</p>
+        </div>
+        <div class="setup-card">
+          <div class="mode-tabs" id="mode-tabs" role="tablist" aria-label="Game mode">
+            <button class="mode-tab is-active" id="local-mode-tab" type="button" role="tab" aria-selected="true">Local game</button>
+            <button class="mode-tab" id="online-mode-tab" type="button" role="tab" aria-selected="false">Online game</button>
+          </div>
+          <div id="local-setup">
+          <form id="setup-form">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">TABLE SETUP</p>
+              <h2>Start a game</h2>
+            </div>
+            <span class="player-count-badge" id="player-count-badge">2 PLAYERS</span>
+          </div>
+          <label class="field-label" for="player-count">Players <span>2–8</span></label>
+          <input id="player-count" type="range" min="2" max="8" value="2">
+          <div class="range-labels"><span>2</span><span>4</span><span>6</span><span>8</span></div>
+          <div class="player-list" id="player-list"></div>
+          <button class="primary-button start-button" type="submit">
+            <span>Start game</span><span aria-hidden="true">↗</span>
+          </button>
+          <p class="setup-note">On a shared screen, only the active player can see their hand.</p>
+          </form>
+          </div>
+          <div id="online-setup" hidden>
+            <div id="online-entry">
+              <div class="section-heading">
+                <div>
+                  <p class="eyebrow">PRIVATE TABLE</p>
+                  <h2>Play with friends</h2>
+                </div>
+              </div>
+              <p class="online-intro">Create a room and share its code, or join with a friend's code.</p>
+              <form id="create-room-form" class="online-form">
+                <p class="eyebrow">CREATE A ROOM</p>
+                <label class="field-label" for="online-host-name">Your name</label>
+                <input id="online-host-name" class="wide-input" type="text" maxlength="24" value="Host" required>
+                <label class="field-label" for="room-capacity">Player limit</label>
+                <select id="room-capacity" class="wide-input">
+                  <option value="2">2 players</option>
+                  <option value="3">3 players</option>
+                  <option value="4" selected>4 players</option>
+                  <option value="5">5 players</option>
+                  <option value="6">6 players</option>
+                  <option value="7">7 players</option>
+                  <option value="8">8 players</option>
+                </select>
+                <button class="primary-button start-button" type="submit"><span>Create room</span><span aria-hidden="true">↗</span></button>
+              </form>
+              <div class="online-divider"><span>OR JOIN</span></div>
+              <form id="join-room-form" class="online-form">
+                <p class="eyebrow">JOIN A ROOM</p>
+                <label class="field-label" for="join-room-code">Room code and your name</label>
+                <div class="join-fields">
+                  <input id="join-room-code" class="wide-input room-code-input" type="text" maxlength="8" placeholder="e.g. 8K3QPT9A" required>
+                  <input id="join-player-name" class="wide-input" type="text" maxlength="24" placeholder="Your name" required>
+                </div>
+                <button class="primary-button start-button" type="submit"><span>Join room</span><span aria-hidden="true">↗</span></button>
+              </form>
+            </div>
+            <div id="online-lobby" hidden></div>
+            <p class="setup-note">The host must keep the server running during an online game.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="game-view" id="game-view" hidden>
+        <div class="game-heading">
+          <div>
+            <p class="eyebrow"><span id="room-label" hidden></span><span id="round-label">ROUND <span id="round-number">1</span> <span class="eyebrow-separator">/</span> TURN <span id="turn-number">1</span></span></p>
+            <h1 id="phase-title">The table</h1>
+          </div>
+          <div class="turn-status" id="turn-status"></div>
+        </div>
+
+        <section class="score-strip" aria-label="Standings">
+          <div class="score-title">
+            <span class="eyebrow">STANDINGS</span>
+            <span class="score-hint">Fewer bull points is better</span>
+          </div>
+          <div class="score-list" id="score-list"></div>
+        </section>
+
+        <section class="board-section">
+          <div class="board-heading">
+            <div>
+              <p class="eyebrow">THE TABLE</p>
+              <h2>Rows</h2>
+            </div>
+            <div class="legend"><span class="legend-chip">CARD NUMBER</span><span>🐂 = 1 PENALTY POINT</span></div>
+          </div>
+          <div class="board" id="board"></div>
+        </section>
+
+        <section class="activity-panel" id="activity-panel"></section>
+        <section class="hand-section" id="hand-section" hidden>
+          <div class="hand-heading">
+            <div>
+              <p class="eyebrow">YOUR HAND</p>
+              <h2><span id="hand-owner"></span></h2>
+            </div>
+            <p class="hand-help">Choose one card to play</p>
+          </div>
+          <div class="hand" id="hand"></div>
+        </section>
+      </section>
+
+      <footer class="footer">
+        <span>俺たちのNIMMT <span class="footer-dot">•</span> GAME TABLE</span>
+        <span>Cards resolve in ascending order</span>
+      </footer>
+    </main>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="/app.js" defer></script>
+  </body>
+</html>

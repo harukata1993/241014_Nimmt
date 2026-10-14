@@ -1,0 +1,329 @@
+import sys
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from nimmt_web import NimmtWebApp
+from nimmt_online import OnlineRoomManager, ROOM_TTL_SECONDS
+
+
+def make_card(value, color="red", penalty=1):
+    return {
+        "value": value,
+        "color": color,
+        "id": f"{color[0]}-{value}",
+        "penalty": penalty,
+    }
+
+
+class NimmtWebAppTest(unittest.TestCase):
+    def setUp(self):
+        self.app = NimmtWebApp()
+        self.state = self.app.start(
+            {
+                "players": ["Alice", "Bob"],
+                "player_types": {"Alice": "human", "Bob": "human"},
+            }
+        )
+
+    def test_handoff_hides_every_hand_until_active_player_acknowledges(self):
+        self.assertTrue(self.state["awaiting_handoff"])
+        self.assertIsNone(self.state["hand"])
+
+        self.state = self.app.acknowledge_handoff()
+        self.assertEqual(self.state["active_player"], "Alice")
+        self.assertEqual(len(self.state["hand"]), 10)
+
+        card_value = self.state["hand"][0]["value"]
+        self.state = self.app.submit_card({"card_value": card_value})
+
+        self.assertEqual(self.state["active_player"], "Bob")
+        self.assertTrue(self.state["awaiting_handoff"])
+        self.assertIsNone(self.state["hand"])
+        self.assertNotIn("pending", self.state)
+        self.assertNotIn("selected_cards", self.state)
+
+    def test_row_selection_is_requested_only_when_no_lower_row_exists(self):
+        game = self.app.game
+        game["rows"] = [
+            [make_card(20, penalty=3)],
+            [make_card(30, penalty=5)],
+            [make_card(40, penalty=1)],
+            [make_card(50, penalty=1)],
+        ]
+        game["hands"]["Alice"] = [make_card(10)]
+        game["hands"]["Bob"] = [make_card(11)]
+
+        self.app.acknowledge_handoff()
+        self.state = self.app.submit_card({"card_value": 10})
+        self.app.acknowledge_handoff()
+        self.state = self.app.submit_card({"card_value": 11})
+
+        self.assertEqual(self.state["phase"], "row")
+        self.assertEqual(self.state["active_player"], "Alice")
+        self.assertEqual(self.state["resolution_card"]["value"], 10)
+        self.assertEqual(self.state["row_candidates"], [0, 1, 2, 3])
+        self.assertIsNone(self.state["hand"])
+
+        self.state = self.app.acknowledge_handoff()
+        self.assertEqual(self.state["phase"], "row")
+        self.assertEqual(self.state["rows"][0]["penalty"], 3)
+        self.state = self.app.choose_row({"row_index": 0})
+
+        self.assertEqual(self.state["phase"], "round_over")
+        self.assertEqual(self.state["players"][0]["penalty"], 3)
+        self.assertEqual(self.state["players"][1]["penalty"], 0)
+        self.assertEqual(self.state["winner"], "Bob")
+
+    def test_played_cards_are_revealed_together_and_sixth_card_collection_is_explained(self):
+        self.app.game["rows"] = [
+            [make_card(value, penalty=1) for value in range(1, 6)],
+            [make_card(30)],
+            [make_card(40)],
+            [make_card(50)],
+        ]
+        self.app.game["hands"]["Alice"] = [make_card(10, "yellow", 2)]
+        self.app.game["hands"]["Bob"] = [make_card(15, "green", 1)]
+
+        self.app.acknowledge_handoff()
+        state = self.app.submit_card({"card_value": 10})
+        self.assertEqual(state["played_cards"], [])
+
+        self.app.acknowledge_handoff()
+        state = self.app.submit_card({"card_value": 15})
+
+        self.assertEqual(
+            [(play["player"], play["card_value"]) for play in state["played_cards"]],
+            [("Alice", 10), ("Bob", 15)],
+        )
+        collection = next(
+            result
+            for result in state["last_results"]
+            if result["collection_reason"] == "sixth_card"
+        )
+        self.assertEqual(collection["row"], 0)
+        self.assertEqual(collection["penalty"], 5)
+        self.assertEqual([card["value"] for card in collection["collected_cards"]], [1, 2, 3, 4, 5])
+
+    def test_invalid_card_and_row_choices_are_rejected(self):
+        self.app.acknowledge_handoff()
+        with self.assertRaisesRegex(ValueError, "手札に"):
+            self.app.submit_card({"card_value": 105})
+        self.assertEqual(len(self.app.pending), 0)
+
+        with self.assertRaisesRegex(ValueError, "先にゲーム"):
+            NimmtWebApp().submit_card({"card_value": 10})
+
+    def test_player_setup_rejects_duplicate_names(self):
+        with self.assertRaisesRegex(ValueError, "重複"):
+            self.app.start(
+                {
+                    "players": ["Alice", "Alice"],
+                    "player_types": {"Alice": "human"},
+                }
+            )
+
+    def test_player_setup_rejects_invalid_types_and_long_names(self):
+        with self.assertRaisesRegex(ValueError, "タイプ"):
+            self.app.start(
+                {
+                    "players": ["Alice", "Bob"],
+                    "player_types": {"Alice": [], "Bob": "human"},
+                }
+            )
+        with self.assertRaisesRegex(ValueError, "24文字"):
+            self.app.start(
+                {
+                    "players": ["A" * 25, "Bob"],
+                    "player_types": {"A" * 25: "human", "Bob": "human"},
+                }
+            )
+
+    def test_ai_player_plays_between_human_selections(self):
+        app = NimmtWebApp()
+        state = app.start(
+            {
+                "players": ["Alice", "CPU", "Carol"],
+                "player_types": {"Alice": "human", "CPU": "ai", "Carol": "human"},
+            }
+        )
+        app.game["rows"] = [[make_card(value)] for value in (10, 20, 30, 40)]
+        app.game["hands"] = {
+            "Alice": [make_card(50), make_card(70)],
+            "CPU": [make_card(101), make_card(102)],
+            "Carol": [make_card(60), make_card(80)],
+        }
+        state = app.acknowledge_handoff()
+        state = app.submit_card({"card_value": 50})
+
+        self.assertEqual(state["active_player"], "Carol")
+        self.assertIsNone(state["hand"])
+        self.assertEqual(len(app.game["hands"]["CPU"]), 2)
+
+        state = app.acknowledge_handoff()
+        state = app.submit_card({"card_value": 60})
+
+        self.assertEqual(state["turn"], 2)
+        self.assertEqual(len(app.game["hands"]["CPU"]), 1)
+        self.assertEqual(len(app.game["hands"]["Alice"]), 1)
+        self.assertEqual(len(app.game["hands"]["Carol"]), 1)
+
+    def test_next_round_keeps_cumulative_penalties(self):
+        self.app.game["penalties"] = {"Alice": 8, "Bob": 3}
+        self.app.phase = "round_over"
+
+        state = self.app.next_round()
+
+        self.assertEqual(state["round"], 2)
+        self.assertEqual({player["name"]: player["penalty"] for player in state["players"]}, {
+            "Alice": 8,
+            "Bob": 3,
+        })
+        self.assertEqual(state["phase"], "choose")
+
+    def test_reset_clears_the_game_and_private_hand(self):
+        self.app.acknowledge_handoff()
+
+        state = self.app.reset()
+
+        self.assertEqual(state, {"phase": "setup"})
+        self.assertIsNone(self.app.game)
+        self.assertIsNone(self.app.active_player)
+
+
+class OnlineRoomManagerTest(unittest.TestCase):
+    def setUp(self):
+        self.manager = OnlineRoomManager()
+        self.host = self.manager.create_room("Host", 4)
+        self.guest = self.manager.join_room(self.host["room_code"], "Guest")
+
+    def test_room_requires_ready_players_and_host_starts(self):
+        with self.assertRaisesRegex(ValueError, "全員が準備完了"):
+            self.manager.start_game(self.host["token"])
+        with self.assertRaisesRegex(ValueError, "部屋主"):
+            self.manager.start_game(self.guest["token"])
+
+        ready = self.manager.set_ready(self.guest["token"])
+        self.assertTrue(ready["players"][1]["ready"])
+        state = self.manager.start_game(self.host["token"])
+
+        self.assertEqual(state["phase"], "choose")
+        self.assertEqual(len(state["hand"]), 10)
+        self.assertEqual(state["selection_count"], 2)
+
+    def test_only_seat_owner_receives_hand_and_other_cards_remain_private(self):
+        self.manager.set_ready(self.guest["token"])
+        host_state = self.manager.start_game(self.host["token"])
+        guest_state = self.manager.state(self.guest["token"])
+
+        self.assertEqual(len(host_state["hand"]), 10)
+        self.assertEqual(len(guest_state["hand"]), 10)
+        self.assertNotIn("token", guest_state)
+
+        host_card = host_state["hand"][0]["value"]
+        host_state = self.manager.choose_card(self.host["token"], host_card)
+        guest_state = self.manager.state(self.guest["token"])
+        self.assertIsNone(host_state["hand"])
+        self.assertTrue(guest_state["can_select_card"])
+        self.assertEqual(guest_state["selected_count"], 1)
+        self.assertNotIn("selected_cards", guest_state)
+
+    def test_online_cards_reveal_only_after_everyone_chooses_and_report_sixth_card_collection(self):
+        self.manager.set_ready(self.guest["token"])
+        self.manager.start_game(self.host["token"])
+        room = self.manager.rooms[self.host["room_code"]]
+        room["game"]["rows"] = [
+            [make_card(value, penalty=1) for value in range(1, 6)],
+            [make_card(30)],
+            [make_card(40)],
+            [make_card(50)],
+        ]
+        room["game"]["hands"]["Host"] = [make_card(10, "yellow", 2)]
+        room["game"]["hands"]["Guest"] = [make_card(15, "green", 1)]
+
+        state = self.manager.choose_card(self.host["token"], 10)
+        self.assertEqual(state["played_cards"], [])
+        state = self.manager.choose_card(self.guest["token"], 15)
+
+        self.assertEqual(
+            [(play["player"], play["card_value"]) for play in state["played_cards"]],
+            [("Host", 10), ("Guest", 15)],
+        )
+        collection = next(
+            result
+            for result in state["last_results"]
+            if result["collection_reason"] == "sixth_card"
+        )
+        self.assertEqual(collection["penalty"], 5)
+        self.assertEqual([card["value"] for card in collection["collected_cards"]], [1, 2, 3, 4, 5])
+
+    def test_seat_token_cannot_play_a_card_from_another_seat(self):
+        self.manager.set_ready(self.guest["token"])
+        self.manager.start_game(self.host["token"])
+        guest_hand = self.manager.state(self.guest["token"])["hand"]
+        with self.assertRaisesRegex(ValueError, "手札"):
+            self.manager.choose_card(self.host["token"], guest_hand[0]["value"])
+
+    def test_only_active_player_can_choose_a_penalty_row(self):
+        self.manager.set_ready(self.guest["token"])
+        self.manager.start_game(self.host["token"])
+        room = self.manager.rooms[self.host["room_code"]]
+        room["game"]["rows"] = [
+            [make_card(20, penalty=3)],
+            [make_card(30, penalty=1)],
+            [make_card(40, penalty=1)],
+            [make_card(50, penalty=1)],
+        ]
+        room["game"]["hands"]["Host"] = [make_card(10), make_card(60)]
+        room["game"]["hands"]["Guest"] = [make_card(11), make_card(61)]
+
+        self.manager.choose_card(self.host["token"], 10)
+        self.manager.choose_card(self.guest["token"], 11)
+        guest_state = self.manager.state(self.guest["token"])
+        self.assertEqual(guest_state["phase"], "row")
+        self.assertFalse(guest_state["can_choose_row"])
+        self.assertEqual(guest_state["row_candidates"], [])
+
+        with self.assertRaisesRegex(ValueError, "このプレイヤー"):
+            self.manager.choose_row(self.guest["token"], 0)
+        host_state = self.manager.choose_row(self.host["token"], 0)
+
+        self.assertEqual(host_state["turn"], 2)
+        self.assertEqual(host_state["players"][0]["penalty"], 3)
+
+    def test_bot_seat_is_host_controlled_and_plays_automatically(self):
+        self.manager.add_bot(self.host["token"], "ai")
+        self.manager.set_ready(self.guest["token"])
+        state = self.manager.start_game(self.host["token"])
+
+        self.assertEqual(state["selection_count"], 3)
+        self.assertEqual(state["selected_count"], 1)
+        self.assertEqual([player["type"] for player in state["players"]], [
+            "human",
+            "human",
+            "ai",
+        ])
+
+    def test_lobby_join_is_rejected_after_game_starts(self):
+        self.manager.set_ready(self.guest["token"])
+        self.manager.start_game(self.host["token"])
+
+        with self.assertRaisesRegex(ValueError, "見つかりません"):
+            self.manager.join_room(self.host["room_code"], "Late Player")
+
+    def test_rooms_are_isolated_and_expire_after_inactivity(self):
+        other_room = self.manager.create_room("Other Host", 2)
+        self.assertNotEqual(self.host["room_code"], other_room["room_code"])
+        self.assertEqual(self.manager.state(self.host["token"])["players"][0]["name"], "Host")
+        self.assertEqual(self.manager.state(other_room["token"])["players"][0]["name"], "Other Host")
+
+        room = self.manager.rooms[self.host["room_code"]]
+        room["last_activity"] -= ROOM_TTL_SECONDS + 1
+        with self.assertRaisesRegex(ValueError, "参加トークン"):
+            self.manager.state(self.host["token"])
+        self.assertNotIn(self.host["room_code"], self.manager.rooms)
+
+
+if __name__ == "__main__":
+    unittest.main()
