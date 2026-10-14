@@ -102,36 +102,47 @@
           <div class="turn-status" id="turn-status"></div>
         </div>
 
-        <section class="score-strip" aria-label="Standings">
-          <div class="score-title">
-            <span class="eyebrow">STANDINGS</span>
-            <span class="score-hint">Fewest bull points in a round wins it</span>
-          </div>
-          <div class="score-list" id="score-list"></div>
-        </section>
+        <div class="game-body">
+          <div class="game-main">
+            <section class="score-strip" aria-label="Standings">
+              <div class="score-title">
+                <span class="eyebrow">STANDINGS</span>
+                <span class="score-hint">Fewest bull points in a round wins it</span>
+              </div>
+              <div class="score-list" id="score-list"></div>
+            </section>
 
-        <section class="board-section">
-          <div class="board-heading">
-            <div>
-              <p class="eyebrow">THE TABLE</p>
-              <h2>Rows</h2>
-            </div>
-            <div class="legend"><span class="legend-chip">CARD NUMBER</span><span>🐂 = 1 PENALTY POINT</span></div>
-          </div>
-          <div class="board" id="board"></div>
-        </section>
+            <section class="board-section">
+              <div class="board-heading">
+                <div>
+                  <p class="eyebrow">THE TABLE</p>
+                  <h2>Rows</h2>
+                </div>
+                <div class="legend"><span class="legend-chip">CARD NUMBER</span><span>🐂 = 1 PENALTY POINT</span></div>
+              </div>
+              <div class="board" id="board"></div>
+            </section>
 
-        <section class="activity-panel" id="activity-panel"></section>
-        <section class="hand-section" id="hand-section" hidden>
-          <div class="hand-heading">
-            <div>
-              <p class="eyebrow">YOUR HAND</p>
-              <h2><span id="hand-owner"></span></h2>
-            </div>
-            <p class="hand-help">Choose one card to play</p>
+            <section class="activity-panel" id="activity-panel"></section>
+            <section class="hand-section" id="hand-section" hidden>
+              <div class="hand-heading">
+                <div>
+                  <p class="eyebrow">YOUR HAND</p>
+                  <h2><span id="hand-owner"></span></h2>
+                </div>
+                <p class="hand-help">Choose one card to play</p>
+              </div>
+              <div class="hand" id="hand"></div>
+            </section>
           </div>
-          <div class="hand" id="hand"></div>
-        </section>
+          <aside class="game-log" aria-label="Game log">
+            <div class="log-heading">
+              <span class="eyebrow">GAME LOG</span>
+              <span class="score-hint">Newest first</span>
+            </div>
+            <ol class="log-list" id="game-log"></ol>
+          </aside>
+        </div>
       </section>
 
       <footer class="footer">

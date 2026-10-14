@@ -12,6 +12,8 @@ from typing import Dict, List, Tuple
 
 
 COLORS = ["red", "yellow", "green", "black"]
+# Upper bound on game-log entries kept per game, so long sessions do not grow the polled state forever.
+MAX_LOG_ENTRIES = 300
 
 
 def card_penalty(value: int) -> int:
@@ -294,6 +296,68 @@ def finish_round(game: Dict[str, object]) -> List[str]:
     game["winners"] = winners
     game["winner"] = winners[0]
     return winners
+
+
+def round_start_event(round_no: int) -> Dict[str, object]:
+    """Build the game-log entry shown when a round begins."""
+    return {"kind": "round_start", "round": round_no, "message": f"ラウンド{round_no}開始"}
+
+
+def placement_event(result: Dict[str, object], round_no: int, turn: int) -> Dict[str, object]:
+    """Build a game-log entry from one resolved card (an entry of ``last_results``).
+
+    Rows are shown 1-based to match the board labels on screen.
+    """
+    player = result["player"]
+    value = result["card_value"]
+    row_label = result["row"] + 1
+    penalty = result["penalty"]
+    reason = result.get("collection_reason")
+    if reason == "sixth_card":
+        message = (
+            f"{player}が出したカード{value}が6枚目になったため、"
+            f"列{row_label}を回収し、ペナルティ{penalty}点を食らった。"
+        )
+    elif reason == "player_choice":
+        message = (
+            f"{player}が出したカード{value}はどの列の末尾よりも小さいため、"
+            f"列{row_label}を回収し、ペナルティ{penalty}点を食らった。"
+        )
+    else:
+        message = f"{player}がカード{value}を列{row_label}に置いた。"
+    return {
+        "kind": "place",
+        "round": round_no,
+        "turn": turn,
+        "player": player,
+        "card_value": value,
+        "row": result["row"],
+        "penalty": penalty,
+        "reason": reason,
+        "message": message,
+    }
+
+
+def round_end_event(game: Dict[str, object]) -> Dict[str, object]:
+    """Build the game-log entry for a finished round; call after ``finish_round``."""
+    winners = list(game["winners"])
+    round_penalty = game["round_penalties"].get(winners[0], 0)
+    return {
+        "kind": "round_end",
+        "round": game["round"],
+        "winners": winners,
+        "message": (
+            f"ラウンド{game['round']}終了：勝者 {'、'.join(winners)}"
+            f"（このラウンドのペナルティ{round_penalty}点）"
+        ),
+    }
+
+
+def append_log(log: List[Dict[str, object]], event: Dict[str, object]) -> None:
+    """Append an event, dropping the oldest entries beyond ``MAX_LOG_ENTRIES``."""
+    log.append(event)
+    if len(log) > MAX_LOG_ENTRIES:
+        del log[: len(log) - MAX_LOG_ENTRIES]
 
 
 def format_card(card: dict) -> str:

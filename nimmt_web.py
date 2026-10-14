@@ -11,11 +11,15 @@ from urllib.parse import urlparse
 
 from nimmt_online import OnlineRoomManager
 from nimmt import (
+    append_log,
     choose_best_row,
     create_initial_game_state,
     finish_round,
     place_card,
+    placement_event,
     prepare_next_round,
+    round_end_event,
+    round_start_event,
 )
 
 
@@ -36,6 +40,7 @@ class NimmtWebApp:
         self.row_candidates: list[int] = []
         self.played_cards: list[dict[str, Any]] = []
         self.last_results: list[dict[str, Any]] = []
+        self.log: list[dict[str, Any]] = []
 
     def start(self, payload: dict[str, Any]) -> dict[str, Any]:
         names = payload.get("players")
@@ -63,6 +68,8 @@ class NimmtWebApp:
         self.game["player_types"] = {name: player_types[name] for name in normalized_names}
         self.played_cards = []
         self.last_results = []
+        self.log = []
+        append_log(self.log, round_start_event(self.game["round"]))
         self._begin_turn()
         return self.state()
 
@@ -138,6 +145,7 @@ class NimmtWebApp:
             "last_results": list(self.last_results),
             "winner": game.get("winner"),
             "winners": list(game.get("winners", [])),
+            "log": list(self.log),
         }
 
     def submit_card(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -186,6 +194,7 @@ class NimmtWebApp:
         self.game = prepare_next_round(game)
         self.played_cards = []
         self.last_results = []
+        append_log(self.log, round_start_event(self.game["round"]))
         self._begin_turn()
         return self.state()
 
@@ -199,6 +208,7 @@ class NimmtWebApp:
         self.row_candidates = []
         self.played_cards = []
         self.last_results = []
+        self.log = []
         return self.state()
 
     def _require_game(self) -> dict[str, Any]:
@@ -298,6 +308,7 @@ class NimmtWebApp:
         game["round_over"] = any(not game["hands"][name] for name in game["players"])
         if game["round_over"]:
             finish_round(game)
+            append_log(self.log, round_end_event(game))
             self.phase = "round_over"
             self.active_player = None
             self.row_candidates = []
@@ -346,6 +357,7 @@ class NimmtWebApp:
                 ],
             }
         )
+        append_log(self.log, placement_event(self.last_results[-1], game["round"], game["turn"]))
         self.row_candidates = []
         self.active_player = None
         self.phase = "resolve"

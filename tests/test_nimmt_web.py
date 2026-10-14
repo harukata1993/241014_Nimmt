@@ -4,6 +4,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from nimmt import MAX_LOG_ENTRIES, append_log
 from nimmt_web import NimmtWebApp
 from nimmt_online import OnlineRoomManager, ROOM_TTL_SECONDS
 
@@ -241,6 +242,95 @@ class NimmtWebAppTest(unittest.TestCase):
         )
         self.assertEqual(state["winners"], [])
 
+    def test_game_log_starts_with_round_start(self):
+        self.assertEqual(
+            [(entry["kind"], entry["message"]) for entry in self.state["log"]],
+            [("round_start", "ラウンド1開始")],
+        )
+
+    def test_game_log_records_placements_collections_and_round_end(self):
+        game = self.app.game
+        game["rows"] = [
+            [make_card(value) for value in range(1, 6)],
+            [make_card(30)],
+            [make_card(40)],
+            [make_card(50)],
+        ]
+        game["hands"]["Alice"] = [make_card(10)]
+        game["hands"]["Bob"] = [make_card(31)]
+
+        state = self.play_last_cards(10, 31)
+
+        log = state["log"]
+        self.assertEqual(
+            [entry["kind"] for entry in log],
+            ["round_start", "place", "place", "round_end"],
+        )
+        sixth, normal, round_end = log[1], log[2], log[3]
+        self.assertEqual(sixth["reason"], "sixth_card")
+        self.assertEqual(sixth["penalty"], 5)
+        self.assertEqual((sixth["round"], sixth["turn"]), (1, 1))
+        self.assertEqual(
+            sixth["message"],
+            "Aliceが出したカード10が6枚目になったため、列1を回収し、ペナルティ5点を食らった。",
+        )
+        self.assertEqual(normal["message"], "Bobがカード31を列2に置いた。")
+        self.assertEqual(normal["penalty"], 0)
+        self.assertEqual(round_end["winners"], ["Bob"])
+        self.assertEqual(
+            round_end["message"],
+            "ラウンド1終了：勝者 Bob（このラウンドのペナルティ0点）",
+        )
+
+    def test_game_log_explains_row_choice_collection(self):
+        game = self.app.game
+        game["rows"] = [
+            [make_card(20, penalty=3)],
+            [make_card(30)],
+            [make_card(40)],
+            [make_card(50)],
+        ]
+        game["hands"]["Alice"] = [make_card(10), make_card(60)]
+        game["hands"]["Bob"] = [make_card(11), make_card(61)]
+
+        self.play_last_cards(10, 11)
+        self.app.acknowledge_handoff()
+        state = self.app.choose_row({"row_index": 0})
+
+        choice = next(entry for entry in state["log"] if entry.get("reason") == "player_choice")
+        self.assertEqual(
+            choice["message"],
+            "Aliceが出したカード10はどの列の末尾よりも小さいため、列1を回収し、ペナルティ3点を食らった。",
+        )
+        self.assertEqual(state["phase"], "choose")
+
+    def test_game_log_lists_tied_winners_and_survives_next_round_until_reset(self):
+        game = self.app.game
+        game["rows"] = [[make_card(5)], [make_card(30)], [make_card(40)], [make_card(50)]]
+        game["hands"]["Alice"] = [make_card(10)]
+        game["hands"]["Bob"] = [make_card(31)]
+        state = self.play_last_cards(10, 31)
+        self.assertEqual(
+            state["log"][-1]["message"],
+            "ラウンド1終了：勝者 Alice、Bob（このラウンドのペナルティ0点）",
+        )
+
+        state = self.app.next_round()
+        self.assertEqual(len(state["log"]), 5)
+        self.assertEqual(state["log"][-1]["message"], "ラウンド2開始")
+
+        self.app.reset()
+        self.assertEqual(self.app.log, [])
+
+    def test_game_log_keeps_only_the_newest_entries(self):
+        log = []
+        for index in range(MAX_LOG_ENTRIES + 5):
+            append_log(log, {"kind": "place", "message": str(index)})
+
+        self.assertEqual(len(log), MAX_LOG_ENTRIES)
+        self.assertEqual(log[0]["message"], "5")
+        self.assertEqual(log[-1]["message"], str(MAX_LOG_ENTRIES + 4))
+
     def test_reset_clears_the_game_and_private_hand(self):
         self.app.acknowledge_handoff()
 
@@ -345,7 +435,19 @@ class OnlineRoomManagerTest(unittest.TestCase):
             {"Host": 0, "Guest": 1},
         )
 
+        self.assertEqual(
+            [entry["kind"] for entry in state["log"]],
+            ["round_start", "place", "place", "round_end"],
+        )
+        self.assertEqual(
+            state["log"][1]["message"],
+            "Hostが出したカード10が6枚目になったため、列1を回収し、ペナルティ5点を食らった。",
+        )
+        self.assertEqual(state["log"][-1]["winners"], ["Guest"])
+
         state = self.manager.next_round(self.host["token"])
+        self.assertEqual(state["log"][-1]["message"], "ラウンド2開始")
+        self.assertEqual(len(state["log"]), 5)
         self.assertEqual(state["winners"], [])
         self.assertEqual(
             {player["name"]: player["wins"] for player in state["players"]},

@@ -9,11 +9,15 @@ import time
 from typing import Any
 
 from nimmt import (
+    append_log,
     choose_best_row,
     create_initial_game_state,
     finish_round,
     place_card,
+    placement_event,
     prepare_next_round,
+    round_end_event,
+    round_start_event,
 )
 
 
@@ -69,6 +73,7 @@ class OnlineRoomManager:
                 "winners": [],
                 "played_cards": [],
                 "last_results": [],
+                "log": [],
                 "last_activity": time.monotonic(),
                 "revision": 0,
             }
@@ -292,6 +297,7 @@ class OnlineRoomManager:
                 "last_results": list(room["last_results"]),
                 "winner": room["winner"],
                 "winners": list(room["winners"]),
+                "log": list(room["log"]),
                 "hand": (
                     [
                         {
@@ -319,6 +325,8 @@ class OnlineRoomManager:
             room["game"]["player_types"] = {
                 seat["name"]: seat["type"] for seat in room["seats"]
             }
+            room["log"] = []
+        append_log(room["log"], round_start_event(room["game"]["round"]))
         room["phase"] = "choose"
         room["selected"] = {}
         room["to_resolve"] = []
@@ -414,6 +422,7 @@ class OnlineRoomManager:
         game["round_over"] = any(not game["hands"][seat["name"]] for seat in room["seats"])
         if game["round_over"]:
             finish_round(game)
+            append_log(room["log"], round_end_event(game))
             room["winner"] = game["winner"]
             room["winners"] = list(game["winners"])
             room["phase"] = "round_over"
@@ -481,6 +490,7 @@ class OnlineRoomManager:
                 ],
             }
         )
+        append_log(room["log"], placement_event(room["last_results"][-1], game["round"], game["turn"]))
         room["active_player"] = None
         room["row_candidates"] = []
 

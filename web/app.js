@@ -812,6 +812,39 @@ function renderGame() {
   renderBoard(gameState);
   renderActivity(gameState);
   renderHand(gameState);
+  renderLog(gameState);
+}
+
+let renderedLogKey = null;
+
+function renderLog(state) {
+  const list = $("#game-log");
+  const log = state.log || [];
+  // Online play polls the state repeatedly; rebuilding an unchanged log would
+  // reset the reader's scroll position, so only redraw when the log changed.
+  const key = `${log.length}|${JSON.stringify(log[log.length - 1] ?? null)}`;
+  if (key === renderedLogKey) return;
+  renderedLogKey = key;
+
+  list.replaceChildren();
+  if (!log.length) {
+    list.append(element("li", "log-empty", "まだ記録はありません。"));
+    return;
+  }
+  for (const entry of [...log].reverse()) {
+    if (entry.kind === "round_start" || entry.kind === "round_end") {
+      list.append(
+        element("li", `log-round${entry.kind === "round_end" ? " is-end" : ""}`, entry.message),
+      );
+      continue;
+    }
+    const item = element("li", `log-entry${entry.penalty > 0 ? " is-penalty" : ""}`);
+    item.append(
+      element("span", "log-turn", `R${entry.round} T${entry.turn}`),
+      element("span", "log-message", entry.message),
+    );
+    list.append(item);
+  }
 }
 
 async function restoreGame() {
