@@ -148,11 +148,13 @@ def create_initial_game_state(player_names: List[str] | None = None) -> Dict[str
         "draw_pile": remaining_after_deals,
         "penalties": {name: 0 for name in player_names},
         "round_penalties": {name: 0 for name in player_names},
+        "wins": {name: 0 for name in player_names},
         "current_player": 0,
         "round": 1,
         "turn": 1,
         "round_over": False,
         "winner": None,
+        "winners": [],
     }
 
 
@@ -226,7 +228,7 @@ def process_selected_cards(
 
     game["round_over"] = any(not game["hands"][name] for name in (player1_name, player2_name))
     if game["round_over"]:
-        game["winner"] = determine_winner(game["penalties"])
+        finish_round(game)
 
     return {
         "placed_cards": placed_cards,
@@ -262,7 +264,7 @@ def play_turn(game: Dict[str, object], player_name: str, card_value: int, row_in
 
     if not game["hands"][player_name]:
         game["round_over"] = True
-        game["winner"] = determine_winner(game["penalties"])
+        finish_round(game)
 
     return penalty
 
@@ -270,6 +272,28 @@ def play_turn(game: Dict[str, object], player_name: str, card_value: int, row_in
 def determine_winner(penalties: Dict[str, int]) -> str:
     """Return the player with the lowest penalty total."""
     return min(penalties.items(), key=lambda item: item[1])[0]
+
+
+def determine_round_winners(round_penalties: Dict[str, int]) -> List[str]:
+    """Return every player tied for the lowest penalty in the round, in player order."""
+    lowest = min(round_penalties.values())
+    return [name for name, penalty in round_penalties.items() if penalty == lowest]
+
+
+def finish_round(game: Dict[str, object]) -> List[str]:
+    """Record the round winners and credit each of them with one win.
+
+    Winners are decided by this round's penalty only, so tied players all win.
+    ``winner`` keeps the first winner for callers that expect a single name.
+    """
+    round_penalties = {name: game["round_penalties"].get(name, 0) for name in game["players"]}
+    winners = determine_round_winners(round_penalties)
+    wins = game.setdefault("wins", {name: 0 for name in game["players"]})
+    for name in winners:
+        wins[name] = wins.get(name, 0) + 1
+    game["winners"] = winners
+    game["winner"] = winners[0]
+    return winners
 
 
 def format_card(card: dict) -> str:
@@ -311,8 +335,11 @@ def render_scoreboard(
     penalties: Dict[str, int],
     round_penalties: Dict[str, int],
     hands: Dict[str, List[dict]],
+    wins: Dict[str, int] | None = None,
 ) -> str:
     """Render current standings, with a comparable bar for accumulated penalties."""
+    if wins is None:
+        wins = {}
     ranked_players = sorted(players, key=lambda name: penalties[name])
     highest_penalty = max((penalties[name] for name in players), default=0)
     bar_width = 12
@@ -324,7 +351,7 @@ def render_scoreboard(
         bar = "#" * filled + "." * (bar_width - filled)
         lines.append(
             f"{rank:>2}. {name} | round {round_penalties.get(name, 0)} "
-            f"| total {total} | hand {len(hands[name])} | {bar}"
+            f"| total {total} | wins {wins.get(name, 0)} | hand {len(hands[name])} | {bar}"
         )
     return "\n".join(lines)
 
@@ -340,15 +367,17 @@ def describe_turn_result(player_name: str, card: dict, row_index: int, penalty: 
 
 
 def show_round_result(game: Dict[str, object]) -> None:
-    """Display each player's round penalty and cumulative total after the round ends."""
+    """Display each player's round penalty, cumulative total, and wins after the round ends."""
     print("\n=== Round Result ===")
     for name in game["players"]:
         round_penalty = game.get("round_penalties", {}).get(name, 0)
         total_penalty = game["penalties"].get(name, 0)
-        print(f"  {name}: this round = {round_penalty}, total = {total_penalty}")
-    winner = game.get("winner")
-    if winner is not None:
-        print(f"Winner: {winner} with {game['penalties'][winner]} total penalty points.")
+        wins = game.get("wins", {}).get(name, 0)
+        print(f"  {name}: this round = {round_penalty}, total = {total_penalty}, wins = {wins}")
+    winners = game.get("winners") or []
+    if winners:
+        round_penalty = game.get("round_penalties", {}).get(winners[0], 0)
+        print(f"Round winner: {' & '.join(winners)} with {round_penalty} penalty points this round.")
 
 
 def prepare_next_round(previous_game: Dict[str, object]) -> Dict[str, object]:
@@ -356,6 +385,8 @@ def prepare_next_round(previous_game: Dict[str, object]) -> Dict[str, object]:
     next_game = create_initial_game_state(previous_game["players"])
     next_game["penalties"] = dict(previous_game["penalties"])
     next_game["round_penalties"] = {name: 0 for name in previous_game["players"]}
+    next_game["wins"] = dict(previous_game.get("wins", {name: 0 for name in previous_game["players"]}))
+    next_game["winners"] = []
     next_game["round"] = int(previous_game["round"]) + 1
     next_game["turn"] = 1
     next_game["round_over"] = False
@@ -438,6 +469,7 @@ def play_game() -> None:
             game["penalties"],
             game["round_penalties"],
             game["hands"],
+            game["wins"],
         ))
         print("HANDS (card penalty shown after ':'):")
         for name in names:
@@ -518,7 +550,7 @@ def play_game() -> None:
 
         game["round_over"] = any(not game["hands"][name] for name in names)
         if game["round_over"]:
-            game["winner"] = determine_winner(game["penalties"])
+            finish_round(game)
 
         total_penalty = sum(step['penalty'] for step in result_steps)
         print(f"Turn summary: total penalty for this turn = {total_penalty}")
@@ -531,13 +563,13 @@ def play_game() -> None:
             game["penalties"],
             game["round_penalties"],
             game["hands"],
+            game["wins"],
         ))
         show_board(game["rows"])
 
         if game["round_over"]:
             show_round_result(game)
-            winner = game["winner"]
-            print(f"Round over. Winner of this round: {winner} with {game['penalties'][winner]} penalty points.")
+            print(f"Round over. Winner of this round: {' & '.join(game['winners'])}.")
             while True:
                 choice = input("Continue to the next round? (y/n): ").strip().lower()
                 if choice in {"y", "yes"}:

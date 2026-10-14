@@ -323,9 +323,12 @@ function renderScores(state) {
     );
     name.append(type);
     const total = element("div", "score-total", `${player.penalty} pt`);
+    total.title = "Total bull points across all rounds";
+    const wins = player.wins ?? 0;
     const meta = element("div", "score-meta");
     meta.append(
       element("span", "", `#${rank + 1}  ROUND ${player.round_penalty} pt`),
+      element("span", "score-wins", `${wins} ${wins === 1 ? "WIN" : "WINS"}`),
       element("span", "", `${player.hand_count} cards left`),
     );
     const bar = element("div", "score-bar");
@@ -711,12 +714,16 @@ function renderActivity(state) {
     }
     notice.append(choices);
   } else if (state.phase === "round_over") {
-    const winner = state.players.find((player) => player.name === state.winner);
+    const winnerNames = state.winners?.length ? state.winners : [state.winner];
+    const winners = state.players.filter((player) => winnerNames.includes(player.name));
+    const winnerSummary = winners
+      .map((player) => `${player.name}: ${player.wins ?? 0} ${player.wins === 1 ? "win" : "wins"}`)
+      .join(" · ");
     addNotice(panel, {
       kind: "is-action",
       kicker: "ROUND COMPLETE",
-      title: `${state.winner} wins the round`,
-      description: `${winner?.penalty ?? 0} total bull points. You can play another round.`,
+      title: `${winnerNames.join(" & ")} ${winnerNames.length === 1 ? "wins" : "win"} the round`,
+      description: `Fewest bull points this round (${winners[0]?.round_penalty ?? 0} pt). ${winnerSummary}. You can play another round.`,
       action: onlineMode
         ? state.is_host
           ? () => onlineAction("/api/online/next-round")

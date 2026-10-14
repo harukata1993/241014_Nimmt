@@ -108,6 +108,7 @@ input[type="range"] { display: block; width: 100%; accent-color: var(--green); c
 .score-type { color: #98a099; font: 9px var(--mono); margin-left: 5px; }
 .score-total { font: 500 15px var(--mono); text-align: right; }
 .score-meta { color: var(--muted); font-size: 9px; grid-column: 1 / -1; display: flex; justify-content: space-between; }
+.score-wins { color: var(--green); font-family: var(--mono); font-weight: 600; }
 .score-bar { height: 3px; grid-column: 1 / -1; background: #e4e8df; border-radius: 3px; overflow: hidden; margin-top: 2px; }
 .score-bar span { height: 100%; display: block; background: var(--orange); border-radius: inherit; transition: width .25s; }
 

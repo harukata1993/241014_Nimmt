@@ -182,6 +182,65 @@ class NimmtWebAppTest(unittest.TestCase):
         })
         self.assertEqual(state["phase"], "choose")
 
+    def play_last_cards(self, alice_value, bob_value):
+        self.app.acknowledge_handoff()
+        self.app.submit_card({"card_value": alice_value})
+        self.app.acknowledge_handoff()
+        return self.app.submit_card({"card_value": bob_value})
+
+    def test_round_winner_is_lowest_round_penalty_not_lowest_total(self):
+        game = self.app.game
+        game["penalties"] = {"Alice": 0, "Bob": 20}
+        game["rows"] = [
+            [make_card(value) for value in range(1, 6)],
+            [make_card(30)],
+            [make_card(40)],
+            [make_card(50)],
+        ]
+        game["hands"]["Alice"] = [make_card(10)]
+        game["hands"]["Bob"] = [make_card(31)]
+
+        state = self.play_last_cards(10, 31)
+
+        players = {player["name"]: player for player in state["players"]}
+        self.assertEqual(state["phase"], "round_over")
+        self.assertEqual(players["Alice"]["round_penalty"], 5)
+        self.assertEqual(players["Bob"]["round_penalty"], 0)
+        self.assertEqual(players["Alice"]["penalty"], 5)
+        self.assertEqual(players["Bob"]["penalty"], 20)
+        self.assertEqual(state["winners"], ["Bob"])
+        self.assertEqual(state["winner"], "Bob")
+        self.assertEqual(players["Alice"]["wins"], 0)
+        self.assertEqual(players["Bob"]["wins"], 1)
+
+    def test_tied_round_penalty_makes_every_tied_player_a_winner(self):
+        game = self.app.game
+        game["penalties"] = {"Alice": 7, "Bob": 2}
+        game["rows"] = [[make_card(5)], [make_card(30)], [make_card(40)], [make_card(50)]]
+        game["hands"]["Alice"] = [make_card(10)]
+        game["hands"]["Bob"] = [make_card(31)]
+
+        state = self.play_last_cards(10, 31)
+
+        self.assertEqual(state["winners"], ["Alice", "Bob"])
+        self.assertEqual(
+            {player["name"]: player["wins"] for player in state["players"]},
+            {"Alice": 1, "Bob": 1},
+        )
+
+    def test_next_round_keeps_cumulative_wins_and_clears_round_winners(self):
+        self.app.game["wins"] = {"Alice": 2, "Bob": 1}
+        self.app.game["winners"] = ["Alice"]
+        self.app.phase = "round_over"
+
+        state = self.app.next_round()
+
+        self.assertEqual(
+            {player["name"]: player["wins"] for player in state["players"]},
+            {"Alice": 2, "Bob": 1},
+        )
+        self.assertEqual(state["winners"], [])
+
     def test_reset_clears_the_game_and_private_hand(self):
         self.app.acknowledge_handoff()
 
@@ -257,6 +316,41 @@ class OnlineRoomManagerTest(unittest.TestCase):
         )
         self.assertEqual(collection["penalty"], 5)
         self.assertEqual([card["value"] for card in collection["collected_cards"]], [1, 2, 3, 4, 5])
+
+    def test_online_round_winner_uses_round_penalty_and_counts_wins(self):
+        self.manager.set_ready(self.guest["token"])
+        state = self.manager.start_game(self.host["token"])
+        self.assertEqual(state["winners"], [])
+        self.assertEqual([player["wins"] for player in state["players"]], [0, 0])
+
+        room = self.manager.rooms[self.host["room_code"]]
+        room["game"]["penalties"] = {"Host": 0, "Guest": 20}
+        room["game"]["rows"] = [
+            [make_card(value) for value in range(1, 6)],
+            [make_card(30)],
+            [make_card(40)],
+            [make_card(50)],
+        ]
+        room["game"]["hands"]["Host"] = [make_card(10)]
+        room["game"]["hands"]["Guest"] = [make_card(31)]
+
+        self.manager.choose_card(self.host["token"], 10)
+        state = self.manager.choose_card(self.guest["token"], 31)
+
+        self.assertEqual(state["phase"], "round_over")
+        self.assertEqual(state["winners"], ["Guest"])
+        self.assertEqual(state["winner"], "Guest")
+        self.assertEqual(
+            {player["name"]: player["wins"] for player in state["players"]},
+            {"Host": 0, "Guest": 1},
+        )
+
+        state = self.manager.next_round(self.host["token"])
+        self.assertEqual(state["winners"], [])
+        self.assertEqual(
+            {player["name"]: player["wins"] for player in state["players"]},
+            {"Host": 0, "Guest": 1},
+        )
 
     def test_seat_token_cannot_play_a_card_from_another_seat(self):
         self.manager.set_ready(self.guest["token"])

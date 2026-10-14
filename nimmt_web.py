@@ -13,7 +13,7 @@ from nimmt_online import OnlineRoomManager
 from nimmt import (
     choose_best_row,
     create_initial_game_state,
-    determine_winner,
+    finish_round,
     place_card,
     prepare_next_round,
 )
@@ -106,6 +106,7 @@ class NimmtWebApp:
                     "type": game["player_types"].get(name, "human"),
                     "penalty": game["penalties"][name],
                     "round_penalty": game["round_penalties"].get(name, 0),
+                    "wins": game["wins"].get(name, 0),
                     "hand_count": len(game["hands"][name]),
                 }
                 for name in game["players"]
@@ -136,6 +137,7 @@ class NimmtWebApp:
             "played_cards": list(self.played_cards),
             "last_results": list(self.last_results),
             "winner": game.get("winner"),
+            "winners": list(game.get("winners", [])),
         }
 
     def submit_card(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -295,7 +297,7 @@ class NimmtWebApp:
 
         game["round_over"] = any(not game["hands"][name] for name in game["players"])
         if game["round_over"]:
-            game["winner"] = determine_winner(game["penalties"])
+            finish_round(game)
             self.phase = "round_over"
             self.active_player = None
             self.row_candidates = []

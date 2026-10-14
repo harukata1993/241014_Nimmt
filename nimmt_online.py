@@ -11,7 +11,7 @@ from typing import Any
 from nimmt import (
     choose_best_row,
     create_initial_game_state,
-    determine_winner,
+    finish_round,
     place_card,
     prepare_next_round,
 )
@@ -66,6 +66,7 @@ class OnlineRoomManager:
                 "active_player": None,
                 "row_candidates": [],
                 "winner": None,
+                "winners": [],
                 "played_cards": [],
                 "last_results": [],
                 "last_activity": time.monotonic(),
@@ -250,6 +251,7 @@ class OnlineRoomManager:
                         "is_host": seat["name"] == room["host"],
                         "penalty": game["penalties"][seat["name"]],
                         "round_penalty": game["round_penalties"].get(seat["name"], 0),
+                        "wins": game["wins"].get(seat["name"], 0),
                         "hand_count": len(game["hands"][seat["name"]]),
                         "has_selected": seat["name"] in room["selected"],
                     }
@@ -289,6 +291,7 @@ class OnlineRoomManager:
                 "played_cards": list(room["played_cards"]),
                 "last_results": list(room["last_results"]),
                 "winner": room["winner"],
+                "winners": list(room["winners"]),
                 "hand": (
                     [
                         {
@@ -322,6 +325,7 @@ class OnlineRoomManager:
         room["active_player"] = None
         room["row_candidates"] = []
         room["winner"] = None
+        room["winners"] = []
         room["played_cards"] = []
         room["last_results"] = []
         room["round"] = room["game"]["round"]
@@ -409,8 +413,9 @@ class OnlineRoomManager:
 
         game["round_over"] = any(not game["hands"][seat["name"]] for seat in room["seats"])
         if game["round_over"]:
-            game["winner"] = determine_winner(game["penalties"])
+            finish_round(game)
             room["winner"] = game["winner"]
+            room["winners"] = list(game["winners"])
             room["phase"] = "round_over"
             room["active_player"] = None
             room["row_candidates"] = []
