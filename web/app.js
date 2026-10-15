@@ -293,6 +293,7 @@ $("#new-game-button").addEventListener("click", async () => {
     gameState = null;
     selectedCard = null;
     onlineMode = false;
+    shownExplosions.clear();
   } catch (error) {
     showToast(error.message);
   } finally {
@@ -315,6 +316,7 @@ function renderScores(state) {
           : ""
       }`,
     );
+    item.dataset.player = player.name;
     const name = element("div", "score-name", player.name);
     const type = element(
       "span",
@@ -813,6 +815,7 @@ function renderGame() {
   renderActivity(gameState);
   renderHand(gameState);
   renderLog(gameState);
+  explodeOverflowedPlayers(gameState);
 }
 
 let renderedLogKey = null;
@@ -845,6 +848,132 @@ function renderLog(state) {
     );
     list.append(item);
   }
+}
+
+// The game re-renders on every card click and online poll, so each overflow is
+// remembered to explode only once. The first state seen after page load is just
+// recorded, so reloading mid-game doesn't replay the previous turn.
+const shownExplosions = new Set();
+let explosionsPrimed = false;
+
+// These match the cut-in keyframes in style.css: the art detonates at IMPACT,
+// the band has closed by LANDING, and everything is gone by CUT_IN_MS.
+const CUT_IN_IMPACT_MS = 680;
+const CUT_IN_LANDING_MS = 1300;
+const CUT_IN_MS = 1600;
+let cutInQueueEnd = 0;
+
+// Loaded up front so the first cut-in doesn't slide in empty; each cut-in clones
+// it, and same-document <img> reuse avoids refetching despite no-store.
+const explosionArt = new Image();
+explosionArt.src = "/pic/explosion.webp";
+
+function explodeOverflowedPlayers(state) {
+  const fresh = (state.last_results || []).filter((result) => {
+    if (result.collection_reason !== "sixth_card") return false;
+    // A card value is played only once per round, so this names one placement.
+    const key = `${state.room_code ?? "local"}:${state.round}:${result.player}:${result.card_value}`;
+    if (shownExplosions.has(key)) return false;
+    shownExplosions.add(key);
+    return true;
+  });
+  if (!explosionsPrimed) {
+    explosionsPrimed = true;
+    return;
+  }
+  if (!fresh.length) return;
+  // Let a cut-in that is still on screen finish before the next one starts.
+  const wait = Math.max(0, cutInQueueEnd - Date.now());
+  cutInQueueEnd = Date.now() + wait + CUT_IN_MS;
+  setTimeout(() => playExplosionCutIn(fresh), wait);
+}
+
+function playExplosionCutIn(results) {
+  const cutIn = element("div", "cutin");
+  cutIn.setAttribute("aria-hidden", "true");
+
+  const frame = element("div", "cutin-frame");
+  const art = explosionArt.cloneNode();
+  art.className = "cutin-art";
+  art.alt = "";
+  frame.append(art);
+  for (let index = 0; index < 10; index += 1) {
+    const streak = element("span", "cutin-streak");
+    streak.style.top = `${6 + Math.random() * 88}%`;
+    streak.style.width = `${12 + Math.random() * 22}%`;
+    streak.style.animationDelay = `${Math.random() * 0.9}s`;
+    frame.append(streak);
+  }
+
+  const victims = element("div", "cutin-victims");
+  results.forEach((result, index) => {
+    const line = element("p", "cutin-victim");
+    line.style.animationDelay = `${0.42 + index * 0.08}s`;
+    line.append(
+      element("strong", "", result.player),
+      element("span", "", `+${result.penalty} pt`),
+    );
+    victims.append(line);
+  });
+
+  const band = element("div", "cutin-band");
+  band.append(frame, element("p", "cutin-title", "EXPLOSION!"), victims);
+  cutIn.append(element("div", "cutin-backdrop"), band, element("div", "cutin-flash"));
+  document.body.append(cutIn);
+
+  if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    const quake = [
+      { translate: "0 0" },
+      { translate: "-7px 4px" },
+      { translate: "6px -5px" },
+      { translate: "-5px -2px" },
+      { translate: "3px 3px" },
+      { translate: "0 0" },
+    ];
+    // "add" stacks the shake on top of the band's own slide instead of replacing it.
+    for (const target of [$(".app-shell"), band]) {
+      target.animate(quake, {
+        duration: 420,
+        delay: CUT_IN_IMPACT_MS,
+        easing: "ease-out",
+        composite: "add",
+      });
+    }
+  }
+  // The blast lands on each player's seat as the band closes.
+  results.forEach((result, index) => {
+    setTimeout(() => showSeatBlast(result), CUT_IN_LANDING_MS + index * 250);
+  });
+  setTimeout(() => cutIn.remove(), CUT_IN_MS);
+}
+
+function showSeatBlast(result) {
+  const seat = Array.from($("#score-list").children).find(
+    (item) => item.dataset.player === result.player,
+  );
+  if (!seat) return;
+  seat.classList.add("is-exploding");
+  // The cut-in already named the player, so a scrolled-away seat (common on
+  // phones) only gets the tint for when it comes back into view.
+  const rect = seat.getBoundingClientRect();
+  if (rect.bottom <= 0 || rect.top >= window.innerHeight) return;
+
+  // The burst lives outside the score list so a re-render doesn't cut it off,
+  // and fixed positioning keeps the sparks from widening the page.
+  const burst = element("div", "explosion");
+  burst.setAttribute("aria-hidden", "true");
+  burst.style.left = `${rect.left + rect.width / 2}px`;
+  burst.style.top = `${rect.top + rect.height / 2}px`;
+  burst.append(element("span", "explosion-flash"), element("span", "explosion-ring"));
+  for (let index = 0; index < 14; index += 1) {
+    const spark = element("span", "explosion-spark");
+    spark.style.setProperty("--angle", `${index * (360 / 14) + Math.random() * 16}deg`);
+    spark.style.setProperty("--distance", `${60 + Math.random() * 55}px`);
+    burst.append(spark);
+  }
+  burst.append(element("span", "explosion-points", `+${result.penalty} pt`));
+  document.body.append(burst);
+  setTimeout(() => burst.remove(), 1400);
 }
 
 async function restoreGame() {

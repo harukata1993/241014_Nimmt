@@ -1,11 +1,18 @@
 import sys
+import tempfile
+import threading
 import unittest
+from http.server import ThreadingHTTPServer
 from pathlib import Path
+from unittest import mock
+from urllib.error import HTTPError
+from urllib.request import urlopen
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import nimmt_web
 from nimmt import MAX_LOG_ENTRIES, append_log
-from nimmt_web import NimmtWebApp
+from nimmt_web import NimmtRequestHandler, NimmtWebApp
 from nimmt_online import OnlineRoomManager, ROOM_TTL_SECONDS
 
 
@@ -519,6 +526,43 @@ class OnlineRoomManagerTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "参加トークン"):
             self.manager.state(self.host["token"])
         self.assertNotIn(self.host["room_code"], self.manager.rooms)
+
+
+class StaticFileTest(unittest.TestCase):
+    def setUp(self):
+        pic_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(pic_dir.cleanup)
+        self.pic_root = Path(pic_dir.name)
+        for patcher in (
+            mock.patch.object(nimmt_web, "PIC_ROOT", self.pic_root),
+            mock.patch.object(NimmtRequestHandler, "log_message"),
+        ):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        server = ThreadingHTTPServer(("127.0.0.1", 0), NimmtRequestHandler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        self.base_url = f"http://127.0.0.1:{server.server_address[1]}"
+
+    def test_explosion_art_is_served_as_webp(self):
+        (self.pic_root / "explosion.webp").write_bytes(b"RIFF\x00\x00\x00\x00WEBP")
+        with urlopen(f"{self.base_url}/pic/explosion.webp") as response:
+            self.assertEqual(response.headers["Content-Type"], "image/webp")
+            self.assertEqual(response.read(), b"RIFF\x00\x00\x00\x00WEBP")
+
+    def test_missing_explosion_art_returns_404(self):
+        with self.assertRaises(HTTPError) as caught:
+            urlopen(f"{self.base_url}/pic/explosion.webp")
+        caught.exception.close()
+        self.assertEqual(caught.exception.code, 404)
+
+    def test_only_listed_files_are_served_from_pic(self):
+        (self.pic_root / "other.webp").write_bytes(b"secret")
+        with self.assertRaises(HTTPError) as caught:
+            urlopen(f"{self.base_url}/pic/other.webp")
+        caught.exception.close()
+        self.assertEqual(caught.exception.code, 404)
 
 
 if __name__ == "__main__":
