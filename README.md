@@ -114,4 +114,5 @@ python3 -m unittest discover -s tests
 | `nimmt_online.py` | オンライン対戦のルーム管理 |
 | `start_online.py` | Webサーバーと Cloudflare Quick Tunnel をまとめて起動 |
 | `web/` | ブラウザ画面（HTML / CSS / JavaScript） |
+| `pic/` | 列があふれたときのカットイン演出で使う画像 |
 | `tests/` | テスト |

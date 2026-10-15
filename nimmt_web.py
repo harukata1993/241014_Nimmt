@@ -23,7 +23,9 @@ from nimmt import (
 )
 
 
-WEB_ROOT = Path(__file__).resolve().parent / "web"
+PROJECT_ROOT = Path(__file__).resolve().parent
+WEB_ROOT = PROJECT_ROOT / "web"
+PIC_ROOT = PROJECT_ROOT / "pic"
 MAX_REQUEST_BYTES = 64 * 1024
 
 
@@ -388,16 +390,22 @@ class NimmtRequestHandler(BaseHTTPRequestHandler):
             self.send_error(405, "Use POST with the private player token.")
             return
         static_files = {
-            "/": ("index.html", "text/html; charset=utf-8"),
-            "/app.js": ("app.js", "text/javascript; charset=utf-8"),
-            "/style.css": ("style.css", "text/css; charset=utf-8"),
+            "/": (WEB_ROOT / "index.html", "text/html; charset=utf-8"),
+            "/app.js": (WEB_ROOT / "app.js", "text/javascript; charset=utf-8"),
+            "/style.css": (WEB_ROOT / "style.css", "text/css; charset=utf-8"),
+            "/pic/explosion.webp": (PIC_ROOT / "explosion.webp", "image/webp"),
         }
         entry = static_files.get(path)
         if entry is None:
             self.send_error(404)
             return
-        filename, content_type = entry
-        content = (WEB_ROOT / filename).read_bytes()
+        file_path, content_type = entry
+        try:
+            content = file_path.read_bytes()
+        except FileNotFoundError:
+            # pic/ isn't part of the repository, so a fresh clone may lack the art.
+            self.send_error(404)
+            return
         self.send_response(200)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(content)))

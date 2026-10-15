@@ -202,6 +202,84 @@ input[type="range"] { display: block; width: 100%; accent-color: var(--green); c
 .toast { position: fixed; z-index: 5; left: 50%; bottom: 25px; transform: translate(-50%, 12px); opacity: 0; pointer-events: none; background: #24362d; color: white; border-radius: 6px; padding: 11px 16px; font-size: 11px; box-shadow: 0 6px 20px #0002; transition: opacity .2s, transform .2s; max-width: calc(100% - 30px); text-align: center; }
 .toast.is-visible { opacity: 1; transform: translate(-50%, 0); }
 
+/* Sixth-card cut-in: a tilted band of the explosion art sweeps across the screen.
+   The band is wider than the viewport so no corner of the picture ever shows.
+   Timings line up with the CUT_IN_* constants in app.js (1.6s in total). */
+.cutin { --cutin-height: clamp(220px, 40vh, 380px); position: fixed; inset: 0; z-index: 20; overflow: hidden; pointer-events: none; }
+.cutin-backdrop { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 50%, rgba(58, 10, 52, .5), rgba(12, 4, 20, .82) 75%); animation: cutin-backdrop 1.6s ease both; }
+.cutin-band { position: absolute; left: -15vw; width: 130vw; top: calc(50% - var(--cutin-height) / 2); height: var(--cutin-height); rotate: -6deg; filter: drop-shadow(0 18px 40px rgba(10, 0, 20, .55)); animation: cutin-band 1.6s both; }
+.cutin-band::before, .cutin-band::after { content: ""; position: absolute; z-index: 3; left: 0; right: 0; height: 5px; background: linear-gradient(90deg, #5fd8ff, #ff4fa3 45%, #ffd36b); box-shadow: 0 0 12px #ff4fa3, 0 0 30px rgba(255, 79, 163, .6); transform-origin: right; animation: cutin-edge .32s cubic-bezier(.2, .9, .3, 1) both; }
+.cutin-band::before { top: -5px; }
+.cutin-band::after { bottom: -5px; animation-delay: .05s; }
+.cutin-frame { position: absolute; inset: 0; overflow: hidden; background: linear-gradient(100deg, #2b0a3d, #b3245e 45%, #ff8a3d 70%, #3a7bd5); }
+.cutin-frame::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, rgba(24, 4, 30, .7), rgba(24, 4, 30, 0) 42%), linear-gradient(180deg, rgba(24, 4, 30, .35), transparent 28%, transparent 70%, rgba(24, 4, 30, .5)); }
+/* Counter-rotated so the character stands upright inside the tilted band.
+   It only spans the on-screen part of the band (plus room for the rotation and
+   drift) so the 1280px art isn't stretched more than it has to be. */
+.cutin-art { position: absolute; left: 8%; top: -30%; width: 84%; height: 160%; max-width: none; object-fit: cover; object-position: 72% 30%; rotate: 6deg; animation: cutin-art-drift 1.6s cubic-bezier(.2, .8, .3, 1) both, cutin-art-charge .55s ease-out .6s both; }
+.cutin-streak { position: absolute; z-index: 1; right: -40%; height: 2px; border-radius: 2px; background: linear-gradient(90deg, rgba(255, 255, 255, .95), rgba(255, 220, 245, 0)); box-shadow: 0 0 8px rgba(255, 180, 230, .9); animation: cutin-streak .5s linear both; }
+.cutin-title { position: absolute; z-index: 4; left: calc(19vw + 16px); top: 0; margin: 0; translate: 0 -58%; color: #fff; font: italic 900 clamp(40px, 8.5vw, 116px) / 1 "Arial Black", "Segoe UI Black", system-ui, sans-serif; letter-spacing: -.02em; white-space: nowrap; -webkit-text-stroke: 2px #3d0a33; text-shadow: 0 0 18px #ff4fa3, 0 0 42px rgba(255, 138, 61, .85), 5px 5px 0 #2a0620; animation: cutin-stamp .42s cubic-bezier(.2, 1.5, .4, 1) .2s both; }
+.cutin-victims { position: absolute; z-index: 2; left: calc(19vw + 16px); bottom: 13%; display: grid; justify-items: start; gap: 6px; }
+.cutin-victim { margin: 0; display: flex; align-items: baseline; gap: 12px; padding: 6px 44px 6px 14px; transform: skewX(-12deg); background: linear-gradient(90deg, rgba(24, 4, 30, .88) 55%, rgba(24, 4, 30, 0)); color: #fff; font-size: clamp(14px, 1.7vw, 22px); white-space: nowrap; animation: cutin-victim .3s ease-out both; }
+.cutin-victim strong { font-weight: 700; }
+.cutin-victim span { color: #ffd36b; font: 700 1.1em var(--mono); text-shadow: 0 0 10px rgba(255, 140, 60, .8); }
+.cutin-flash { position: absolute; inset: 0; background: radial-gradient(circle at 40% 50%, #fff 0 14%, rgba(255, 236, 248, .9) 30%, rgba(255, 110, 190, .4) 58%, transparent 78%); animation: cutin-flash .55s ease-out .68s both; }
+
+@keyframes cutin-backdrop { 0% { opacity: 0; } 12%, 80% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes cutin-band {
+  0% { translate: 110vw 0; animation-timing-function: cubic-bezier(.16, .9, .3, 1); }
+  18% { translate: 0 0; }
+  78% { translate: -2.5vw 0; scale: 1 1; opacity: 1; animation-timing-function: cubic-bezier(.7, 0, .9, .5); }
+  90% { translate: -2.5vw 0; scale: 1 0; opacity: 1; }
+  100% { translate: -2.5vw 0; scale: 1 0; opacity: 0; }
+}
+@keyframes cutin-edge { from { scale: 0 1; } }
+@keyframes cutin-art-drift { from { translate: -6% 0; scale: 1.14; } to { translate: 1% 0; scale: 1.03; } }
+@keyframes cutin-art-charge { 0% { filter: none; } 25% { filter: brightness(2) saturate(1.5); } 100% { filter: brightness(1.08) saturate(1.1); } }
+@keyframes cutin-streak { from { translate: 0 0; } to { translate: -180vw 0; } }
+@keyframes cutin-stamp { from { scale: 2.4; opacity: 0; filter: blur(6px); } 60% { opacity: 1; filter: blur(0); } to { scale: 1; opacity: 1; } }
+@keyframes cutin-victim { from { translate: -48px 0; opacity: 0; } }
+@keyframes cutin-flash { 0% { opacity: 0; } 15% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes cutin-fade { 0%, 100% { opacity: 0; } 12%, 80% { opacity: 1; } }
+
+/* The blast that lands on the player's standings card after the cut-in. */
+.score-player.is-exploding { animation: explosion-shake .55s ease-out, explosion-tint 1.1s ease-out; }
+.explosion { position: fixed; z-index: 21; width: 0; height: 0; pointer-events: none; }
+.explosion > span { position: absolute; left: 0; top: 0; }
+.explosion-flash { width: 170px; height: 170px; margin: -85px 0 0 -85px; border-radius: 50%; background: radial-gradient(circle, #fff 0 16%, #ffd1ec 30%, rgba(255, 79, 163, .75) 50%, transparent 70%); animation: explosion-flash .55s ease-out forwards; }
+.explosion-ring { width: 120px; height: 120px; margin: -60px 0 0 -60px; border: 3px solid #ff7cc4; border-radius: 50%; box-shadow: 0 0 14px #ff4fa3, inset 0 0 14px #5fd8ff; animation: explosion-ring .6s cubic-bezier(.2, .8, .3, 1) forwards; }
+.explosion-spark { width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; border-radius: 50%; background: #ff4fa3; box-shadow: 0 0 8px #ffb3e0; animation: explosion-spark .75s cubic-bezier(.15, .7, .3, 1) forwards; }
+.explosion-spark:nth-child(3n) { background: #5fd8ff; }
+.explosion-spark:nth-child(3n + 1) { background: #ffd36b; }
+.explosion-points { color: #b23a22; font: 700 18px var(--mono); white-space: nowrap; text-shadow: 0 1px 0 #fff, 0 0 8px #fff; opacity: 0; animation: explosion-points 1.3s ease-out forwards; }
+
+@keyframes explosion-shake {
+  15% { transform: translateX(-5px) rotate(-1deg); }
+  30% { transform: translateX(5px) rotate(1deg); }
+  45% { transform: translateX(-4px); }
+  60% { transform: translateX(3px); }
+  75% { transform: translateX(-1px); }
+}
+@keyframes explosion-tint { from { background-color: #ffd5b8; box-shadow: 0 0 0 2px #d8724366; } }
+@keyframes explosion-flash { from { transform: scale(.15); opacity: 1; } to { transform: scale(1.5); opacity: 0; } }
+@keyframes explosion-spark {
+  from { transform: rotate(var(--angle)) translateX(0) scale(1); opacity: 1; }
+  to { transform: rotate(var(--angle)) translateX(var(--distance)) scale(.3); opacity: 0; }
+}
+@keyframes explosion-ring { from { scale: .2; opacity: 1; } to { scale: 2.1; opacity: 0; } }
+@keyframes explosion-points {
+  0%, 15% { transform: translate(-50%, -30px); opacity: 0; }
+  30% { transform: translate(-50%, -52px); opacity: 1; }
+  100% { transform: translate(-50%, -82px); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .explosion, .cutin-streak, .cutin-flash { display: none; }
+  .cutin-band { animation: cutin-fade 1.6s ease both; }
+  .cutin-band::before, .cutin-band::after, .cutin-art, .cutin-title, .cutin-victim { animation: none; }
+  .score-player.is-exploding { animation: explosion-tint 1.1s ease-out; }
+}
+
 @media (max-width: 820px) {
   .setup-view { grid-template-columns: 1fr; gap: 34px; padding: 44px 2vw; }
   .hero h1 { font-size: clamp(48px, 11vw, 70px); }
